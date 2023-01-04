@@ -18,6 +18,7 @@ from mmdet.apis import init_random_seed, set_random_seed, train_detector
 from mmdet.datasets import build_dataset
 from mmdet.models import build_detector
 from mmdet.utils import (collect_env, get_device, get_root_logger,
+                         replace_cfg_vals, rfnext_init_model,
                          setup_multi_processes, update_data_root)
 
 
@@ -109,6 +110,9 @@ def main():
 
     cfg = Config.fromfile(args.config)
 
+    # replace the ${key} with the value of cfg.key
+    cfg = replace_cfg_vals(cfg)
+
     # update data root according to MMDET_DATASETS
     update_data_root(cfg)
 
@@ -142,6 +146,7 @@ def main():
         # use config filename as default work_dir if cfg.work_dir is None
         cfg.work_dir = osp.join('./work_dirs',
                                 osp.splitext(osp.basename(args.config))[0])
+
     if args.resume_from is not None:
         cfg.resume_from = args.resume_from
     cfg.auto_resume = args.auto_resume
@@ -210,10 +215,15 @@ def main():
         test_cfg=cfg.get('test_cfg'))
     model.init_weights()
 
+    # init rfnext if 'RFSearchHook' is defined in cfg
+    rfnext_init_model(model, cfg=cfg)
+
     datasets = [build_dataset(cfg.data.train)]
     if len(cfg.workflow) == 2:
+        assert 'val' in [mode for (mode, _) in cfg.workflow]
         val_dataset = copy.deepcopy(cfg.data.val)
-        val_dataset.pipeline = cfg.data.train.pipeline
+        val_dataset.pipeline = cfg.data.train.get(
+            'pipeline', cfg.data.train.dataset.get('pipeline'))
         datasets.append(build_dataset(val_dataset))
     if cfg.checkpoint_config is not None:
         # save mmdet version, config file content and class names in
